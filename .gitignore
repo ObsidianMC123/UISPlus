@@ -35,3 +35,7 @@ tools/busref/watch_out.txt
 # code tham khao chep tu thuanmazda/hcmc-bus-tracker: repo do KHONG co license -> khong phat hanh lai
 tools/busref/*.kt
 test/
+# ghi chu ke hoach noi bo - chi giu o may
+PLAN.md
+ROADMAP.md
+UI_PLAN.md
