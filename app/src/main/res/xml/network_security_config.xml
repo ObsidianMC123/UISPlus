@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  uis.ptithcm.edu.vn dung chung chi GlobalSign GCC R46 AlphaSSL CA 2025 -> GlobalSign Root R46.
+  Root R46 KHONG co trong kho CA cua Android 13 tro xuong => loi
+  "Trust anchor for certification path not found".
+  Them dung root R46 (SHA-256 4F:A3:12:6D:8D:3A:11:D1:C4:85:5A:4F:80:7C:BA:D6:CF:91:9D:3A:5A:88:B0:3B:EA:2C:63:72:D9:3C:40:C9)
+  lam trust anchor bo sung, CHI cho domain ptithcm.edu.vn. Van kiem tra chung chi day du, khong tat SSL.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">ptithcm.edu.vn</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/globalsign_root_r46" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">UIS+</string>
+    <string name="widget_name">Thời khóa biểu</string>
+    <string name="widget_desc">Lịch học hôm nay và buổi tiếp theo</string>
+    <string name="bus_widget_name">Xe buýt</string>
+    <string name="bus_widget_desc">Giờ xe buýt tới các trạm đã ghim</string>
+</resources>

@@ -1,0 +1,37 @@
+.gradle/
+build/
+app/build/
+local.properties
+_sdk/
+tools/inter_tmp/
+tools/*_out.txt
+tools/sample_*.json
+keystore/
+keystore.properties
+# du lieu ca nhan / mat khau
+datascan.txt
+scan_shapes.json
+*.apk
+.idea/
+*.iml
+
+# --- them khi public repo (26/11/2026) ---
+.kotlin/
+node_modules/
+.sessions/
+*.log
+.env
+*.bak*
+*.zip
+# anh chup / dump man hinh may that (co MSSV, ten, lich hoc) + log cai dat
+tools/test/**/*.png
+tools/test/**/*.xml
+tools/test/**/*.txt
+tools/*.png
+tools/*.xml
+tools/bak/
+tools/xfer/
+tools/busref/watch_out.txt
+# code tham khao chep tu thuanmazda/hcmc-bus-tracker: repo do KHONG co license -> khong phat hanh lai
+tools/busref/*.kt
+test/
