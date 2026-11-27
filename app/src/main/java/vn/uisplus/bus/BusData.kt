@@ -456,8 +456,8 @@ object BusData {
     }
 
     // ---------------------------------------------------------------- tim duong (1 tuyen, di thang)
-    private const val WALK_MPS = 1.15   // di bo ~4 km/h (da tinh duong vong)
-    private const val BUS_MPS = 4.5     // xe buyt noi do ~16 km/h ke ca dung tram
+    internal const val WALK_MPS = 1.15   // di bo ~4 km/h (da tinh duong vong)
+    internal const val BUS_MPS = 4.5     // xe buyt noi do ~16 km/h ke ca dung tram
 
     /**
      * Cac tuyen di THANG tu [fromLat,fromLng] toi [toLat,toLng]: len o tram trong ban kinh [maxWalk]

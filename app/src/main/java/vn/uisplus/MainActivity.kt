@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
         /** Tab can mo khi bam vao thong bao (vd. 2 = Tap trung). */
         val pendingTab = MutableStateFlow<Int?>(null)
         /** Thu tu tab tren thanh duoi (1.3). */
-        val TABS = listOf("today", "week", "bus", "focus", "me", "music")
+        val TABS = listOf("today", "week", "bus", "focus", "me", "music", "notes")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

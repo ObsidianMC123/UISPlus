@@ -3,6 +3,11 @@ package vn.uisplus.music
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import java.util.concurrent.Executors
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
@@ -71,17 +76,83 @@ class MusicService : MediaSessionService() {
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        session = MediaSession.Builder(this, player).setSessionActivity(open).build()
+        // v1.9: mo lai app/may -> nap hang cho + bai + vi tri cua lan nghe truoc (KHONG tu phat;
+        // chua prepare nen khong ton mang, bam phat moi giai link)
+        runCatching { LastSession.load(this) }.getOrNull()?.let { s ->
+            player.setMediaItems(s.tracks.map { it.toItem() }, s.index, s.posMs)
+            player.shuffleModeEnabled = s.shuffle
+            player.repeatMode = s.repeat
+        }
+        player.addListener(object : Player.Listener {
+            override fun onEvents(p: Player, events: Player.Events) {
+                val queue = events.contains(Player.EVENT_TIMELINE_CHANGED)
+                if (queue || events.containsAny(
+                        Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED,
+                        Player.EVENT_POSITION_DISCONTINUITY, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+                        Player.EVENT_REPEAT_MODE_CHANGED, Player.EVENT_PLAYBACK_STATE_CHANGED,
+                    )
+                ) save(queue)
+            }
+        })
+        session = MediaSession.Builder(this, player)
+            .setSessionActivity(open)
+            .setCallback(object : MediaSession.Callback {
+                // Android 13+: the "tiep tuc nghe" tren khung media / tai nghe bluetooth khi app da tat
+                override fun onPlaybackResumption(
+                    mediaSession: MediaSession, controller: MediaSession.ControllerInfo,
+                ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+                    val s = LastSession.load(this@MusicService)
+                        ?: return Futures.immediateFailedFuture(UnsupportedOperationException("chua co phien"))
+                    return Futures.immediateFuture(
+                        MediaSession.MediaItemsWithStartPosition(s.tracks.map { it.toItem() }, s.index, s.posMs),
+                    )
+                }
+            })
+            .build()
+        ticker.postDelayed(tick, 5_000)
+    }
+
+    // ---------------------------------------------------------------- v1.9: luu phien nghe
+    private val io = Executors.newSingleThreadExecutor()
+    private val ticker = Handler(Looper.getMainLooper())
+    private val tick = object : Runnable {
+        override fun run() {
+            if (session?.player?.isPlaying == true) save(false)
+            ticker.postDelayed(this, 5_000)
+        }
+    }
+
+    /** Doc trang thai tren main thread, ghi file o luong phu. */
+    private fun save(queueChanged: Boolean) {
+        val p = session?.player ?: return
+        val n = p.mediaItemCount
+        val tracks = if (queueChanged) (0 until n).map { p.getMediaItemAt(it).toTrack() } else null
+        val id = p.currentMediaItem?.mediaId
+        val idx = p.currentMediaItemIndex
+        val pos = if (p.playbackState == Player.STATE_ENDED) 0L else p.currentPosition
+        val sh = p.shuffleModeEnabled
+        val rp = p.repeatMode
+        val app = applicationContext
+        io.execute {
+            runCatching {
+                if (tracks != null) LastSession.saveQueue(app, tracks)
+                if (n > 0 && id != null) LastSession.savePos(app, idx, id, pos, sh, rp)
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        save(false)
         val p = session?.player
         if (p == null || !p.playWhenReady || p.mediaItemCount == 0 || p.playbackState == Player.STATE_ENDED) stopSelf()
     }
 
     override fun onDestroy() {
+        ticker.removeCallbacks(tick)
+        save(false)
+        io.shutdown()
         session?.run { player.release(); release() }
         session = null
         super.onDestroy()

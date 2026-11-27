@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -266,7 +267,7 @@ private val DMY = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionSheet(s: ClassSession, onDismiss: () -> Unit) {
+fun SessionSheet(s: ClassSession, onNote: ((camera: Boolean) -> Unit)? = null, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val c = subjectColor(s.maMon)
     ModalBottomSheet(
@@ -307,9 +308,35 @@ fun SessionSheet(s: ClassSession, onDismiss: () -> Unit) {
             if (s.nghiDay || s.dayBu) {
                 InfoRow(Ic.Bell, "Trạng thái", if (s.nghiDay) "Buổi này NGHỈ DẠY" else "Buổi DẠY BÙ")
             }
+            if (onNote != null) {
+                // v1.10: ghi bai buoi nay
+                val all by vn.uisplus.notes.NoteStore.notes.collectAsStateWithLifecycle()
+                val mine = all.filter { it.maMon == s.maMon && it.epochDay == s.epochDay }
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SheetAction(Ic.Camera, "Chụp bảng", Modifier.weight(1f)) { onNote(true) }
+                    SheetAction(
+                        Ic.Note,
+                        if (mine.isEmpty()) "Soạn ghi chú" else "Ghi bài (${mine.sumOf { it.photos.size }} ảnh)",
+                        Modifier.weight(1f),
+                    ) { onNote(false) }
+                }
+            }
             Spacer(Modifier.height(14.dp))
             GradientButton("Thêm vào Google Calendar") { addToCalendar(ctx, s) }
         }
+    }
+}
+
+@Composable
+private fun SheetAction(icon: ImageVector, text: String, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier.clip(shape).background(Ui.Soft).bounceClick(onClick = onClick).padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, null, tint = Ui.Brand, modifier = Modifier.size(20.dp))
+        Text(text, Modifier.padding(start = 8.dp), color = Ui.Ink, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
 

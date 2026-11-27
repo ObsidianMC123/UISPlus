@@ -108,10 +108,12 @@ object MusicPlayer {
     }
     /** v1.8: chi tam dung neu da ket noi (khong tu khoi dong service khi chua phat gi). */
     fun pause(@Suppress("UNUSED_PARAMETER") ctx: Context) { controller?.takeIf { it.isConnected && it.isPlaying }?.pause() }
-    fun next(ctx: Context) = with(ctx) { it.seekToNext() }
-    fun prev(ctx: Context) = with(ctx) { it.seekToPrevious() }
+    // v1.9: hang cho khoi phuc tu phien truoc chua prepare (STATE_IDLE) -> prepare khi bam
+    private fun MediaController.ready() { if (playbackState == Player.STATE_IDLE && mediaItemCount > 0) prepare() }
+    fun next(ctx: Context) = with(ctx) { it.ready(); it.seekToNext() }
+    fun prev(ctx: Context) = with(ctx) { it.ready(); it.seekToPrevious() }
     fun seek(ctx: Context, ms: Long) = with(ctx) { it.seekTo(ms) }
-    fun jump(ctx: Context, index: Int) = with(ctx) { it.seekTo(index, 0); it.play() }
+    fun jump(ctx: Context, index: Int) = with(ctx) { it.seekTo(index, 0); it.ready(); it.play() }
     fun removeAt(ctx: Context, index: Int) = with(ctx) { it.removeMediaItem(index) }
     fun setShuffle(ctx: Context, on: Boolean) = with(ctx) { it.shuffleModeEnabled = on }
     fun cycleRepeat(ctx: Context) = with(ctx) {
@@ -187,27 +189,5 @@ object MusicPlayer {
         )
     }
 
-    private fun Track.toItem(): MediaItem = MediaItem.Builder()
-        .setMediaId(id)
-        .setUri(Uri.parse("${MusicService.SCHEME}://$id"))
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle(title)
-                .setArtist(artist)
-                .setArtworkUri(Uri.parse(art))
-                .setExtras(Bundle().apply { putLong("dur", dur); putString("thumb", thumb) })
-                .build(),
-        )
-        .build()
-
-    private fun MediaItem.toTrack(): Track {
-        val m = mediaMetadata
-        return Track(
-            id = mediaId,
-            title = m.title?.toString() ?: "",
-            artist = m.artist?.toString() ?: "",
-            dur = m.extras?.getLong("dur") ?: 0,
-            thumb = m.extras?.getString("thumb") ?: (m.artworkUri?.toString() ?: ""),
-        )
-    }
+    // v1.9: Track.toItem()/MediaItem.toTrack() chuyen sang LastSession.kt (service dung chung)
 }

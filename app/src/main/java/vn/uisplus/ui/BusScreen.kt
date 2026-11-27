@@ -91,6 +91,7 @@ import org.osmdroid.events.ZoomEvent
 import vn.uisplus.bus.Arrival
 import vn.uisplus.bus.BusData
 import vn.uisplus.bus.DirectTrip
+import vn.uisplus.bus.Itinerary
 import vn.uisplus.bus.TripPlan
 import vn.uisplus.bus.Place
 import vn.uisplus.bus.Places
@@ -115,6 +116,8 @@ private sealed class BusSel {
     /** 1 xe cu the: cac tram chinh xe se di qua. */
     data class VehSel(val arr: ArrSel, val plate: String) : BusSel()
     data class PlaceSel(val place: Place) : BusSel()
+    /** v1.9: lich trinh tung buoc cua 1 cach di toi [back].place, xuat phat tu [origin]. */
+    data class TripSel(val plan: TripPlan, val back: PlaceSel, val origin: Pair<Double, Double>, val fromMe: Boolean) : BusSel()
 }
 
 internal class Live<T>(val data: T? = null, val loading: Boolean = false, val error: String? = null, val at: Long = 0)
@@ -276,7 +279,11 @@ fun BusScreen(vm: MainViewModel) {
     // Ghim do tren ban do theo dia diem dang chon
     LaunchedEffect(sel) {
         val s = sel
-        if (s is BusSel.PlaceSel) ctl.showPlace(s.place.lat, s.place.lng, brand) else ctl.clearPlace()
+        when (s) {
+            is BusSel.PlaceSel -> ctl.showPlace(s.place.lat, s.place.lng, brand)
+            is BusSel.TripSel -> ctl.showPlace(s.back.place.lat, s.back.place.lng, brand)
+            else -> ctl.clearPlace()
+        }
     }
     // Tuyen di thang toi dia diem
     var plan by remember { mutableStateOf(Live<List<TripPlan>>()) }
@@ -295,12 +302,20 @@ fun BusScreen(vm: MainViewModel) {
             // 1) tuyen di thang hien ngay, 2) tim them cach doi 1 lan tuyen (co the lau hon lan dau)
             val direct = BusData.planDirect(ctx, o.first, o.second, p.lat, p.lng)
             plan = Live(direct.map { TripPlan(it) }, loading = true, at = System.currentTimeMillis())
-            val all = try {
+            var all = try {
                 BusData.plan(ctx, o.first, o.second, p.lat, p.lng, direct)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 direct.map { TripPlan(it) }
+            }
+            // v1.9: khong co cach nao trong 800 m -> noi rong ban kinh di bo len 1,5 km
+            if (all.isEmpty()) all = try {
+                BusData.plan(ctx, o.first, o.second, p.lat, p.lng, null, maxWalk = 1500.0)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emptyList()
             }
             Live(all, at = System.currentTimeMillis())
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -309,6 +324,62 @@ fun BusScreen(vm: MainViewModel) {
             Live(error = "Không tìm được tuyến (${e.message ?: "lỗi mạng"})")
         }
         planFor = planKey ?: ""
+    }
+
+    // ---------------------------------------------------------------- lich trinh kieu Google Maps (v1.9)
+    val tripSel = sel as? BusSel.TripSel
+    var tripGeos by remember { mutableStateOf<List<VarGeo?>>(emptyList()) }
+    var tripLive by remember { mutableStateOf<List<Live<List<Arrival>>>>(emptyList()) }
+    val tripKey = tripSel?.let { it.plan.key + "@" + it.origin }
+    LaunchedEffect(tripKey) {
+        val t = tripSel ?: run { tripGeos = emptyList(); tripLive = emptyList(); ctl.clearTrip(); return@LaunchedEffect }
+        val legs = listOfNotNull(t.plan.first, t.plan.second)
+        tripLive = legs.map { Live(loading = true) }
+        tripGeos = legs.map { null }
+        // lo trinh tung chang (co cache) -> ve len ban do
+        launch {
+            val gs = legs.map { l -> runCatching { BusData.varGeo(ctx, l.routeId, l.varId) }.getOrNull() }
+            tripGeos = gs
+            val walks = ArrayList<List<Pair<Double, Double>>>()
+            val rides = ArrayList<Pair<List<Pair<Double, Double>>, Int>>()
+            val stops = ArrayList<Pair<Stop, Int>>()
+            walks += listOf(t.origin, t.plan.first.board.lat to t.plan.first.board.lng)
+            for ((i, l) in legs.withIndex()) {
+                val c = routeColor(l.routeNo)
+                val g = gs[i]
+                val sp = g?.let { Itinerary.span(it, l) }
+                rides += (if (g != null && sp != null) Itinerary.path(g, sp.first, sp.second)
+                else listOf(l.board.lat to l.board.lng, l.alight.lat to l.alight.lng)) to c
+                stops += l.board to c
+                stops += l.alight to c
+            }
+            t.plan.second?.let { b -> walks += listOf(t.plan.first.alight.lat to t.plan.first.alight.lng, b.board.lat to b.board.lng) }
+            val last = legs.last()
+            walks += listOf(last.alight.lat to last.alight.lng, t.back.place.lat to t.back.place.lng)
+            ctl.showTrip(walks, rides, stops, if (t.fromMe) null else t.origin, dark) { st -> openStop(st, back = t) }
+            val pts = ArrayList<Pair<Double, Double>>()
+            pts += t.origin
+            rides.forEach { pts += it.first }
+            pts += t.back.place.lat to t.back.place.lng
+            ctl.fitPoints(pts, 17.0)
+        }
+        // gio xe song tai tram len cua tung chang (20 s/lan)
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                tripLive = legs.mapIndexed { i, l ->
+                    try {
+                        val list = BusData.arrivals(l.board.id).firstOrNull { it.routeId == l.routeId && it.varId == l.varId }?.arrivals.orEmpty()
+                        Live(list, at = System.currentTimeMillis())
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        val old = tripLive.getOrNull(i)
+                        Live(old?.data, error = e.message ?: "lỗi mạng", at = old?.at ?: 0L)
+                    }
+                }
+                delay(20_000)
+            }
+        }
     }
 
     // ---------------------------------------------------------------- tram -> tuyen -> xe (v1.5)
@@ -394,7 +465,7 @@ fun BusScreen(vm: MainViewModel) {
         if (!ready) return@LaunchedEffect
         delay(220)
         val s = sel
-        if (s is BusSel.RouteSel || s is BusSel.ArrSel || s is BusSel.VehSel) { ctl.showStops(emptyList(), null, emptySet(), brand) {}; return@LaunchedEffect }
+        if (s is BusSel.RouteSel || s is BusSel.ArrSel || s is BusSel.VehSel || s is BusSel.TripSel) { ctl.showStops(emptyList(), null, emptySet(), brand) {}; return@LaunchedEffect }
         val bb = mapView.boundingBox
         val list = if (mapView.zoomLevelDouble >= 14.5)
             withContext(Dispatchers.Default) { BusData.stopsIn(bb.latSouth, bb.latNorth, bb.lonWest, bb.lonEast, 220) }
@@ -487,6 +558,7 @@ fun BusScreen(vm: MainViewModel) {
             searching || query.isNotEmpty() -> { query = ""; searching = false; focus.clearFocus() }
             sel is BusSel.RouteSel && (sel as BusSel.RouteSel).focusStop != null -> sel = (sel as BusSel.RouteSel).copy(focusStop = null)
             sel is BusSel.VehSel -> sel = (sel as BusSel.VehSel).arr
+            sel is BusSel.TripSel -> sel = (sel as BusSel.TripSel).back
             sel is BusSel.ArrSel -> sel = (sel as BusSel.ArrSel).let { it.back ?: BusSel.StopSel(it.stopId) }
             sel is BusSel.StopSel -> sel = (sel as BusSel.StopSel).back ?: BusSel.None
             else -> sel = BusSel.None
@@ -607,13 +679,25 @@ fun BusScreen(vm: MainViewModel) {
                         }
                         is BusSel.PlaceSel -> PlacePanel(
                             s.place, me, plan,
-                            onTrip = { t: DirectTrip ->
+                            onTrip = { tp: TripPlan ->
+                                // v1.9: bam 1 cach di -> lich trinh tung buoc kieu Google Maps
+                                val o = me ?: (PTIT_CENTER.latitude to PTIT_CENTER.longitude)
+                                sel = BusSel.TripSel(tp, s, o, me != null)
+                            },
+                            onStop = { st -> openStop(st, back = s) },
+                            onLocate = { askLocate() },
+                            onClose = { sel = BusSel.None },
+                        )
+                        is BusSel.TripSel -> TripPanel(
+                            s.plan, s.back.place, if (s.fromMe) "Vị trí của bạn" else "Học viện (PTIT)",
+                            tripGeos, tripLive, now,
+                            onLeg = { t: DirectTrip ->
                                 arrSeed = null
                                 allStops = false
                                 sel = BusSel.ArrSel(t.board.id, t.routeId, t.varId, t.routeNo, t.dest, alight = t.alight.id, back = s)
                             },
-                            onStop = { st -> openStop(st, back = s) },
-                            onLocate = { askLocate() },
+                            onStopTap = { st -> ctl.goTo(st.lat, st.lng) },
+                            onBack = { sel = s.back },
                             onClose = { sel = BusSel.None },
                         )
                         is BusSel.RouteSel -> RoutePanel(
@@ -1019,6 +1103,7 @@ private fun BusSheet(sel: BusSel, searching: Boolean, modifier: Modifier, conten
             is BusSel.ArrSel -> "a" + sel.key
             is BusSel.VehSel -> "v" + sel.plate
             is BusSel.PlaceSel -> "p" + sel.place.lat + "," + sel.place.lng
+            is BusSel.TripSel -> "t" + sel.plan.key
             else -> "none"
         }
         LaunchedEffect(selKey) { if (selKey != "none" && detent == 0) settle(1) }

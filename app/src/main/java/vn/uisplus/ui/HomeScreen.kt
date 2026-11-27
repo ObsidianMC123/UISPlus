@@ -86,7 +86,7 @@ fun HomeScreen(vm: MainViewModel) {
     }
     LaunchedEffect(Unit) {
         vn.uisplus.MainActivity.pendingTab.collect { t ->
-            if (t != null) { tab = t.coerceIn(0, 5); launcher = false; vn.uisplus.MainActivity.pendingTab.value = null }
+            if (t != null) { tab = t.coerceIn(0, Tabs.NOTES); launcher = false; vn.uisplus.MainActivity.pendingTab.value = null }
         }
     }
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -124,11 +124,17 @@ fun HomeScreen(vm: MainViewModel) {
                 2 -> BusScreen(vm)
                 3 -> FocusScreen(vm, d)
                 Tabs.MUSIC -> MusicScreen()
+                Tabs.NOTES -> NotesScreen(d)
                 else -> SettingsScreen(vm, d)
             }
         }
         LaunchedEffect(launcher, tab) {
             if (launcher || tab == Tabs.MUSIC) vn.uisplus.music.MusicPlayer.connect(ctx)
+        }
+        // v1.9: co phien nghe cu -> ket noi som de thanh mini hien bai dang nghe do, bam la nghe tiep
+        LaunchedEffect(Unit) {
+            val has = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vn.uisplus.music.LastSession.has(ctx) }
+            if (has) vn.uisplus.music.MusicPlayer.connect(ctx)
         }
         SnackbarHost(
             snack,
@@ -138,7 +144,10 @@ fun HomeScreen(vm: MainViewModel) {
         }
         LauncherPopup(
             visible = launcher, current = tab,
-            onPick = { launcher = false; tab = it },
+            onPick = {
+                launcher = false
+                if (it == -Tabs.NOTES) { tab = Tabs.NOTES; NotesUi.quickShot(d) } else tab = it
+            },
             onDismiss = { launcher = false },
         )
         BottomBar(
@@ -149,8 +158,17 @@ fun HomeScreen(vm: MainViewModel) {
         )
         MusicFullPlayer()
         VideoHost() // v1.8: xem video kieu YouTube, de len tren cung
+        NotesEditorHost(d) // v1.10: ghi bai (chup bang + soan ghi chu)
     }
-    detail?.let { s -> SessionSheet(s) { detail = null } }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vn.uisplus.notes.NoteStore.load(ctx) }
+    }
+    detail?.let { s ->
+        SessionSheet(
+            s,
+            onNote = { cam -> detail = null; NotesUi.openForSession(ctx, s, cam) },
+        ) { detail = null }
+    }
 }
 
 /**

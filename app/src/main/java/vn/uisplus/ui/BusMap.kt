@@ -502,6 +502,69 @@ class BusMapController(private val ctx: Context, val map: MapView) {
         map.invalidate()
     }
 
+    // ------------------------------------------------------------ v1.9: lich trinh kieu Google Maps
+    /** Duong cham tron (di bo): ve bang Path de DashPathEffect chac chan co tac dung. */
+    private class DotLine(private val pts: List<GeoPoint>, private val paint: Paint) : org.osmdroid.views.overlay.Overlay() {
+        private val path = android.graphics.Path()
+        private val pt = android.graphics.Point()
+        override fun draw(c: Canvas, mv: MapView, shadow: Boolean) {
+            if (shadow || pts.size < 2) return
+            val pj = mv.projection
+            path.reset()
+            for ((i, g) in pts.withIndex()) {
+                pj.toPixels(g, pt)
+                if (i == 0) path.moveTo(pt.x.toFloat(), pt.y.toFloat()) else path.lineTo(pt.x.toFloat(), pt.y.toFloat())
+            }
+            c.drawPath(path, paint)
+        }
+    }
+
+    private val tripLines = ArrayList<org.osmdroid.views.overlay.Overlay>()
+    private val tripMarks = FolderOverlay()
+
+    /**
+     * Ve 1 lich trinh: [walks] = cac doan di bo (cham tron), [rides] = doan xe chay that theo
+     * lo trinh + mau tuyen, [stops] = tram len/xuong (mau chang), [origin] = diem xuat phat
+     * (null = dung cham "vi tri cua toi" san co).
+     */
+    fun showTrip(
+        walks: List<List<Pair<Double, Double>>>,
+        rides: List<Pair<List<Pair<Double, Double>>, Int>>,
+        stops: List<Pair<Stop, Int>>,
+        origin: Pair<Double, Double>?,
+        dark: Boolean,
+        onStop: (Stop) -> Unit,
+    ) {
+        clearTrip(false)
+        val walkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = if (dark) 0xFFC3CBD6.toInt() else 0xFF4B5563.toInt()
+            strokeWidth = px(5f)
+            strokeCap = Paint.Cap.ROUND
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(0.1f, px(9f)), 0f)
+        }
+        for ((pts, color) in rides) {
+            if (pts.size < 2) continue
+            val gp = pts.map { GeoPoint(it.first, it.second) }
+            tripLines += line(gp, if (dark) 0xFF0F1115.toInt() else 0xFFFFFFFF.toInt(), 10f)
+            tripLines += line(gp, color, 6f)
+        }
+        for (w in walks) if (w.size >= 2) tripLines += DotLine(w.map { GeoPoint(it.first, it.second) }, walkPaint)
+        // duoi lop tram/xe/ghim, tren nen ban do
+        for ((i, o) in tripLines.withIndex()) map.overlays.add(minOf(1 + i, map.overlays.size), o)
+        for ((s, color) in stops) tripMarks.add(marker(s.lat, s.lng, dot(color, 0xFFFFFFFF.toInt(), 18f), s.name) { onStop(s) })
+        origin?.let { tripMarks.add(marker(it.first, it.second, dot(0xFF111827.toInt(), 0xFFFFFFFF.toInt(), 18f), "Xuất phát", null)) }
+        if (tripMarks !in map.overlays) map.overlays.add(tripMarks)
+        map.invalidate()
+    }
+
+    fun clearTrip(redraw: Boolean = true) {
+        for (o in tripLines) map.overlays.remove(o)
+        tripLines.clear()
+        tripMarks.items.clear()
+        if (redraw) map.invalidate()
+    }
+
     // ------------------------------------------------------------ vi tri cua toi
     fun showMe(lat: Double, lng: Double) {
         val ic = dot(0xFF0EA5E9.toInt(), 0xFFFFFFFF.toInt(), 18f)

@@ -63,8 +63,9 @@ object Tabs {
     const val FOCUS = 3
     const val ME = 4
     const val MUSIC = 5
+    const val NOTES = 6
     /** Cac man nam trong popup "4 cua so". */
-    val IN_LAUNCHER = setOf(FOCUS, MUSIC)
+    val IN_LAUNCHER = setOf(FOCUS, MUSIC, NOTES)
 }
 
 /**
@@ -154,6 +155,11 @@ fun LauncherPopup(visible: Boolean, current: Int, onPick: (Int) -> Unit, onDismi
                     }
                     Tile(0, Ic.Music, "Nhạc", musicSub, current == Tabs.MUSIC, live = ps.playing, Modifier.weight(1f)) { onPick(Tabs.MUSIC) }
                     Tile(1, Ic.Timer, "Hẹn giờ", timerSub, current == Tabs.FOCUS, live = st.running, Modifier.weight(1f)) { onPick(Tabs.FOCUS) }
+                }
+                Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val notes by vn.uisplus.notes.NoteStore.notes.collectAsStateWithLifecycle()
+                    Tile(2, Ic.Note, "Ghi bài", if (notes.isEmpty()) "Chụp bảng · soạn ghi chú" else "${notes.size} ghi bài · chụp bảng", current == Tabs.NOTES, live = false, Modifier.weight(1f)) { onPick(Tabs.NOTES) }
+                    Tile(3, Ic.Camera, "Chụp bảng", "Mở camera, gắn vào môn đang học", false, live = false, Modifier.weight(1f)) { onPick(-Tabs.NOTES) }
                 }
                 // dang phat -> dieu khien nhanh ngay trong popup
                 val t = ps.current

@@ -29,8 +29,8 @@ android {
         applicationId = "vn.uisplus.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.8.0"
+        versionCode = 13
+        versionName = "1.10.0"
         buildConfigField("String", "CARTO_KEY", "\"$cartoKey\"")
     }
 
